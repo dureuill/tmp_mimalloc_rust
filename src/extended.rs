@@ -45,7 +45,7 @@ impl MiMalloc {
     /// The function data is **leaked**, so do not call this function too many times over the life of the program.
     pub fn register_error<F>(f: F)
     where
-        F: Fn(ErrorCode) + Send + Sync,
+        F: Fn(ErrorCode) + Send + Sync + 'static,
     {
         let layout = Layout::new::<F>();
         let alloc = MiMalloc;
@@ -69,7 +69,7 @@ impl MiMalloc {
     /// The function data is **leaked**, so do not call this function too many times over the life of the program.
     pub fn register_output<F>(f: F)
     where
-        F: Fn(&CStr),
+        F: Fn(&CStr) + Send + Sync + 'static,
     {
         let layout = Layout::new::<F>();
         let alloc = MiMalloc;
@@ -91,7 +91,7 @@ impl MiMalloc {
 
 unsafe extern "C" fn call_error_fn<F>(code: c_int, arg: *mut c_void)
 where
-    F: Fn(ErrorCode),
+    F: Fn(ErrorCode) + 'static,
 {
     let error_code = ErrorCode::from_code(code);
     let f: *mut F = arg.cast();
@@ -101,7 +101,7 @@ where
 
 unsafe extern "C" fn call_out_fn<F>(msg: *const c_char, arg: *mut c_void)
 where
-    F: Fn(&CStr),
+    F: Fn(&CStr) + 'static,
 {
     let msg = CStr::from_ptr(msg);
     let f: *mut F = arg.cast();

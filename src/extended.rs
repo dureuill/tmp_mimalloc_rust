@@ -1,7 +1,10 @@
 use crate::MiMalloc;
-use core::ffi::c_void;
 #[cfg(not(feature = "v2"))]
 use core::ffi::{c_char, CStr};
+use core::{
+    alloc::{GlobalAlloc, Layout},
+    ffi::{c_int, c_void},
+};
 
 impl MiMalloc {
     /// Get the mimalloc version.
@@ -32,6 +35,98 @@ impl MiMalloc {
             } else {
                 Err("failed to call mi_stats_get_json")
             }
+        }
+    }
+
+    /// Register a callback function that is called on mimalloc errors.
+    ///
+    /// ## Note
+    ///
+    /// The function data is **leaked**, so do not call this function too many times over the life of the program.
+    pub fn register_error<F>(f: F)
+    where
+        F: Fn(ErrorCode) + Send + Sync,
+    {
+        let layout = Layout::new::<F>();
+        let alloc = MiMalloc;
+        let arg: *mut F = unsafe { alloc.alloc(layout).cast() };
+        unsafe { arg.write(f) };
+
+        unsafe { ffi::mi_register_error(Some(call_error_fn::<F>), arg.cast()) };
+    }
+
+    /// Reset the callback function to the default.
+    pub fn reset_error() {
+        unsafe {
+            ffi::mi_register_error(None, core::ptr::null_mut());
+        }
+    }
+
+    /// Register a callback function that is called on mimalloc messages print.
+    ///
+    /// ## Note
+    ///
+    /// The function data is **leaked**, so do not call this function too many times over the life of the program.
+    pub fn register_output<F>(f: F)
+    where
+        F: Fn(&CStr),
+    {
+        let layout = Layout::new::<F>();
+        let alloc = MiMalloc;
+        let arg: *mut F = unsafe { alloc.alloc(layout).cast() };
+        unsafe { arg.write(f) };
+
+        unsafe {
+            ffi::mi_register_output(Some(call_out_fn::<F>), arg.cast());
+        }
+    }
+
+    /// Reset the callback function for printing messages to the default.
+    pub fn reset_output() {
+        unsafe {
+            ffi::mi_register_output(None, core::ptr::null_mut());
+        }
+    }
+}
+
+unsafe extern "C" fn call_error_fn<F>(code: c_int, arg: *mut c_void)
+where
+    F: Fn(ErrorCode),
+{
+    let error_code = ErrorCode::from_code(code);
+    let f: *mut F = arg.cast();
+    let f = f.as_ref().unwrap();
+    f(error_code);
+}
+
+unsafe extern "C" fn call_out_fn<F>(msg: *const c_char, arg: *mut c_void)
+where
+    F: Fn(&CStr),
+{
+    let msg = CStr::from_ptr(msg);
+    let f: *mut F = arg.cast();
+    let f = f.as_ref().unwrap();
+    f(msg);
+}
+
+pub enum ErrorCode {
+    DoubleFree,
+    CorruptedFreeListOrMetadata,
+    OutOfMemory,
+    TooLargeRequest,
+    InvalidPointer,
+    UnexpectedErrorCode(i64),
+}
+
+impl ErrorCode {
+    pub fn from_code(code: c_int) -> Self {
+        match code {
+            11 => Self::DoubleFree,
+            12 => Self::OutOfMemory,
+            14 => Self::CorruptedFreeListOrMetadata,
+            22 => Self::InvalidPointer,
+            75 => Self::TooLargeRequest,
+            code => Self::UnexpectedErrorCode(code as _),
         }
     }
 }

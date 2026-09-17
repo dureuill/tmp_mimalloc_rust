@@ -32,6 +32,9 @@ extern crate libmimalloc_sys as ffi;
 #[cfg(feature = "extended")]
 mod extended;
 
+#[cfg(feature = "extended")]
+pub use extended::ErrorCode;
+
 #[cfg(feature = "nightly_allocator_api")]
 mod nightly_allocator_api;
 

@@ -1,5 +1,4 @@
 use crate::MiMalloc;
-#[cfg(not(feature = "v2"))]
 use core::ffi::{c_char, CStr};
 use core::{
     alloc::{GlobalAlloc, Layout},
